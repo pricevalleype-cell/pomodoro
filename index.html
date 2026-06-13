@@ -34,7 +34,6 @@
     overflow-x: hidden;
   }
 
-  /* ── Ambient glow ── */
   body::before {
     content: '';
     position: fixed;
@@ -61,7 +60,6 @@
     max-width: 480px;
   }
 
-  /* ── Header ── */
   header {
     display: flex;
     flex-direction: column;
@@ -85,7 +83,6 @@
     text-transform: uppercase;
   }
 
-  /* ── Mode Tabs ── */
   .mode-tabs {
     display: flex;
     gap: 6px;
@@ -120,7 +117,6 @@
     background: rgba(255,255,255,0.06);
   }
 
-  /* ── Timer Ring ── */
   .timer-wrap {
     position: relative;
     display: flex;
@@ -186,7 +182,6 @@
     text-transform: uppercase;
   }
 
-  /* ── Controls ── */
   .controls {
     display: flex;
     align-items: center;
@@ -244,7 +239,6 @@
   .btn-main:hover::after { background: rgba(255,255,255,0.12); }
   .btn-main:active { transform: scale(0.95); }
 
-  /* ── Session count ── */
   .sessions {
     display: flex;
     gap: 8px;
@@ -271,7 +265,6 @@
     letter-spacing: 0.05em;
   }
 
-  /* ── Panel Card ── */
   .panel {
     width: 100%;
     background: var(--surface);
@@ -291,7 +284,6 @@
     font-weight: 500;
   }
 
-  /* ── Color picker ── */
   .color-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
@@ -327,7 +319,6 @@
     text-shadow: 0 1px 4px rgba(0,0,0,0.6);
   }
 
-  /* ── Alarm picker ── */
   .alarm-list {
     display: flex;
     flex-direction: column;
@@ -385,7 +376,6 @@
 
   .alarm-play:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 
-  /* ── Duration settings ── */
   .duration-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -424,7 +414,6 @@
     border-color: var(--accent);
   }
 
-  /* ── Notification toast ── */
   .toast {
     position: fixed;
     bottom: 32px;
@@ -448,7 +437,6 @@
     opacity: 1;
   }
 
-  /* scrollbar */
   ::-webkit-scrollbar { width: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -462,20 +450,17 @@
 <body>
 
 <main>
-  <!-- Header -->
   <header>
     <div class="logo">🍅 Pomodoro</div>
     <h1>Focus · Break · Repeat</h1>
   </header>
 
-  <!-- Mode tabs -->
   <div class="mode-tabs">
     <button class="mode-tab active" data-mode="pomodoro">Pomodoro</button>
     <button class="mode-tab" data-mode="short">Descanso corto</button>
     <button class="mode-tab" data-mode="long">Descanso largo</button>
   </div>
 
-  <!-- Timer Ring -->
   <div class="timer-wrap">
     <svg class="timer-svg" width="260" height="260" viewBox="0 0 260 260">
       <defs>
@@ -495,7 +480,6 @@
     </div>
   </div>
 
-  <!-- Session dots -->
   <div class="sessions">
     <div class="session-dot" id="dot0"></div>
     <div class="session-dot" id="dot1"></div>
@@ -504,14 +488,12 @@
     <span class="session-text" id="sessionText">Sesión 1 de 4</span>
   </div>
 
-  <!-- Main controls -->
   <div class="controls">
     <button class="btn-icon" id="btnReset" title="Reiniciar">↺</button>
     <button class="btn-main" id="btnPlay">▶</button>
     <button class="btn-icon" id="btnSkip" title="Saltar">⏭</button>
   </div>
 
-  <!-- Duration settings -->
   <div class="panel">
     <div class="panel-title">⏱ Duración (minutos)</div>
     <div class="duration-grid">
@@ -530,13 +512,11 @@
     </div>
   </div>
 
-  <!-- Alarm selector -->
   <div class="panel">
     <div class="panel-title">🔔 Sonido de alarma</div>
     <div class="alarm-list" id="alarmList"></div>
   </div>
 
-  <!-- Background color -->
   <div class="panel">
     <div class="panel-title">🎨 Color de fondo</div>
     <div class="color-grid" id="colorGrid"></div>
@@ -556,86 +536,74 @@ const state = {
   interval: null,
   selectedAlarm: 0,
   selectedColor: 0,
-  audioCtx: null,
 };
 
-// ─── Alarm definitions ───────────────────────────────────
-const alarms = [
-  { icon: '🔔', name: 'Campana suave', desc: 'Tono cálido y relajante',
-    play(ctx) { bell(ctx, [523, 659, 784], 0.4, 0.8); } },
-  { icon: '⚡', name: 'Alerta digital', desc: 'Pitido electrónico nítido',
-    play(ctx) { beep(ctx, 880, 0.1, 0.15); setTimeout(()=>beep(ctx,1046,0.1,0.15),200); setTimeout(()=>beep(ctx,1318,0.15,0.25),400); } },
-  { icon: '🎵', name: 'Melodía zen', desc: 'Notas ascendentes suaves',
-    play(ctx) { zen(ctx); } },
-  { icon: '📯', name: 'Trompeta breve', desc: 'Acorde vibrante de fanfarria',
-    play(ctx) { fanfare(ctx); } },
-  { icon: '🌊', name: 'Olas digitales', desc: 'Sonido envolvente tipo océano',
-    play(ctx) { waves(ctx); } },
-];
-
-// ─── Audio Engine (iOS-safe) ───────────────────────────────
-// iOS Safari rule: AudioContext must be created AND resumed
-// synchronously inside a direct user-gesture handler (touchend/click).
-// We keep one context and re-use it, resuming it on every play call.
+// ─── Audio Engine (iOS/Safari compatible) ────────────────
+//
+// iOS Safari rules:
+// 1. AudioContext must be created AND resumed inside a direct user gesture.
+// 2. Oscillator-based sounds scheduled for the future (e.g. timer completion)
+//    are BLOCKED on iOS unless the context was already unlocked by the user.
+// 3. The fix: pre-render alarm sounds into AudioBuffers during the first user
+//    gesture. Then playback via AudioBufferSourceNode works even from timers.
+//
+// Strategy:
+// - Create context + unlock on FIRST any-touch/click on document.
+// - Render all sounds as offline buffers immediately after unlock.
+// - playAlarm() → always plays a pre-rendered buffer (never raw oscillators).
+// - Preview buttons also use the same buffered playback.
 
 let _ctx = null;
+let _audioUnlocked = false;
+const _buffers = {}; // keyed by alarm index
 
-function getCtx() {
-  // Create lazily — will be called inside a tap handler on iOS
-  if (!_ctx) {
-    _ctx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  return _ctx;
-}
-
-// Synchronous unlock + play wrapper
-// iOS requires ctx.resume() to be called in the SAME call stack as the tap.
-function withCtx(fn) {
-  const ctx = getCtx();
-  // resume() is synchronous enough on iOS when called inside touchend
-  if (ctx.state === 'suspended') {
-    ctx.resume().then(() => fn(ctx));
-  } else {
-    fn(ctx);
+// Render a sound function into an AudioBuffer using OfflineAudioContext
+async function renderSound(fn, duration) {
+  const sampleRate = 44100;
+  const offline = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
+    1, Math.ceil(sampleRate * duration), sampleRate
+  );
+  fn(offline);
+  try {
+    return await offline.startRendering();
+  } catch(e) {
+    return null;
   }
 }
 
-// Core tone builder
+// Schedule a tone on any BaseAudioContext (online or offline)
 function tone(ctx, freq, startT, dur, vol, type = 'sine') {
   const now = ctx.currentTime;
   const osc  = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = type;
-  osc.frequency.setValueAtTime(freq, now);
-  gain.gain.setValueAtTime(0.001,   now + startT);
-  gain.gain.linearRampToValueAtTime(vol,   now + startT + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + startT + dur);
+  osc.frequency.setValueAtTime(freq, now + startT);
+  gain.gain.setValueAtTime(0.001, now + startT);
+  gain.gain.linearRampToValueAtTime(vol, now + startT + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + startT + Math.max(dur - 0.02, 0.01));
   osc.connect(gain);
   gain.connect(ctx.destination);
   osc.start(now + startT);
-  osc.stop(now  + startT + dur + 0.05);
+  osc.stop(now + startT + dur + 0.05);
 }
 
-// ── Individual alarm sounds ────────────────────────────────
+// ── Sound definitions (work on any AudioContext) ──────────
 function soundBell(ctx) {
   [[523,0],[659,0.38],[784,0.76]].forEach(([f,t]) => {
     tone(ctx, f,     t,      1.1, 0.55, 'sine');
     tone(ctx, f * 2, t,      0.5, 0.18, 'sine');
   });
 }
-
 function soundDigital(ctx) {
   for (let i = 0; i < 4; i++) {
     tone(ctx, 1046, i * 0.22, 0.16, 0.65, 'square');
   }
 }
-
 function soundZen(ctx) {
   [261, 329, 392, 523, 659, 784].forEach((f, i) => {
     tone(ctx, f, i * 0.22, 0.9, 0.45, 'sine');
   });
 }
-
 function soundFanfare(ctx) {
   [
     [523, 0,    0.28], [659, 0,    0.28], [784, 0,    0.28],
@@ -643,7 +611,6 @@ function soundFanfare(ctx) {
     [784, 0.65, 0.50], [988, 0.65, 0.50], [1175,0.65, 0.50],
   ].forEach(([f, t, d]) => tone(ctx, f, t, d, 0.38, 'sawtooth'));
 }
-
 function soundWaves(ctx) {
   for (let i = 0; i < 8; i++) {
     const f = 160 + i * 28;
@@ -652,24 +619,99 @@ function soundWaves(ctx) {
   }
 }
 
-const SOUND_FNS = [soundBell, soundDigital, soundZen, soundFanfare, soundWaves];
+const SOUND_FNS  = [soundBell, soundDigital, soundZen, soundFanfare, soundWaves];
+const SOUND_DURS = [2.2,        1.2,          1.8,      1.4,          1.9]; // seconds
 
-function playAlarm(index) {
-  withCtx(ctx => SOUND_FNS[index](ctx));
+// Pre-render all sounds into buffers using OfflineAudioContext
+async function prerenderBuffers() {
+  for (let i = 0; i < SOUND_FNS.length; i++) {
+    if (!_buffers[i]) {
+      _buffers[i] = await renderSound(SOUND_FNS[i], SOUND_DURS[i]);
+    }
+  }
 }
+
+// Unlock AudioContext on first gesture — iOS REQUIRES this
+async function unlockAudio() {
+  if (_audioUnlocked) return;
+  try {
+    _ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // iOS needs a silent buffer played to truly unlock
+    const buf = _ctx.createBuffer(1, 1, 22050);
+    const src = _ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(_ctx.destination);
+    src.start(0);
+    if (_ctx.state === 'suspended') {
+      await _ctx.resume();
+    }
+    _audioUnlocked = true;
+    // Pre-render all alarm buffers now that we have a real context
+    prerenderBuffers();
+  } catch(e) {
+    console.warn('Audio unlock failed:', e);
+  }
+}
+
+// Play a pre-rendered buffer. Falls back to live oscillators if buffer not ready.
+function playAlarm(index) {
+  if (!_ctx) {
+    // Context not yet created — try to play live (desktop fallback)
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      SOUND_FNS[index](ctx);
+    } catch(e) {}
+    return;
+  }
+
+  // Resume if suspended (e.g. after tab backgrounding on iOS)
+  const doPlay = () => {
+    const buf = _buffers[index];
+    if (buf) {
+      // Use pre-rendered buffer — works on iOS even without a fresh gesture
+      const src = _ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(_ctx.destination);
+      src.start(0);
+    } else {
+      // Buffer not ready yet — fall back to live oscillators (requires gesture)
+      SOUND_FNS[index](_ctx);
+    }
+  };
+
+  if (_ctx.state === 'suspended') {
+    _ctx.resume().then(doPlay).catch(e => console.warn('resume failed', e));
+  } else {
+    doPlay();
+  }
+}
+
+// Attach unlock to all early user interactions
+document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+document.addEventListener('touchend',   unlockAudio, { once: true, passive: true });
+document.addEventListener('click',      unlockAudio, { once: true });
+
+// ─── Alarm definitions ───────────────────────────────────
+const alarms = [
+  { icon: '🔔', name: 'Campana suave',   desc: 'Tono cálido y relajante' },
+  { icon: '⚡', name: 'Alerta digital',  desc: 'Pitido electrónico nítido' },
+  { icon: '🎵', name: 'Melodía zen',     desc: 'Notas ascendentes suaves' },
+  { icon: '📯', name: 'Trompeta breve',  desc: 'Acorde vibrante de fanfarria' },
+  { icon: '🌊', name: 'Olas digitales',  desc: 'Sonido envolvente tipo océano' },
+];
 
 // ─── Backgrounds ─────────────────────────────────────────
 const backgrounds = [
-  { label: 'Carbón', value: '#0D0D14', style: '#0D0D14' },
-  { label: 'Medianoche', value: '#0A1628', style: '#0A1628' },
-  { label: 'Bosque', value: '#0D1F1A', style: '#0D1F1A' },
-  { label: 'Ciruela', value: '#1A0D28', style: '#1A0D28' },
-  { label: 'Moca', value: '#1A1210', style: '#1A1210' },
-  { label: 'Aurora', value: 'aurora', style: 'linear-gradient(135deg,#0a0a1a 0%,#1a0a2e 50%,#0a1a2e 100%)' },
-  { label: 'Atardecer', value: 'sunset', style: 'linear-gradient(160deg,#1a0a05 0%,#2a1005 50%,#1a0505 100%)' },
-  { label: 'Océano', value: 'ocean', style: 'linear-gradient(160deg,#050d1a 0%,#051a1a 100%)' },
-  { label: 'Ópalo', value: 'opal', style: 'linear-gradient(135deg,#0a1a14 0%,#081420 50%,#14081a 100%)' },
-  { label: 'Gris cálido', value: '#171614', style: '#171614' },
+  { label: 'Carbón',     style: '#0D0D14' },
+  { label: 'Medianoche', style: '#0A1628' },
+  { label: 'Bosque',     style: '#0D1F1A' },
+  { label: 'Ciruela',    style: '#1A0D28' },
+  { label: 'Moca',       style: '#1A1210' },
+  { label: 'Aurora',     style: 'linear-gradient(135deg,#0a0a1a 0%,#1a0a2e 50%,#0a1a2e 100%)' },
+  { label: 'Atardecer',  style: 'linear-gradient(160deg,#1a0a05 0%,#2a1005 50%,#1a0505 100%)' },
+  { label: 'Océano',     style: 'linear-gradient(160deg,#050d1a 0%,#051a1a 100%)' },
+  { label: 'Ópalo',      style: 'linear-gradient(135deg,#0a1a14 0%,#081420 50%,#14081a 100%)' },
+  { label: 'Gris cálido',style: '#171614' },
 ];
 
 // ─── Build alarm UI ───────────────────────────────────────
@@ -685,19 +727,29 @@ alarms.forEach((a, i) => {
     </div>
     <button class="alarm-play" data-i="${i}" title="Previsualizar">▶</button>
   `;
-  function onAlarmTap(e) {
+
+  const selectAlarm = (e) => {
     if (e.target.closest('.alarm-play')) return;
     document.querySelectorAll('.alarm-option').forEach(x => x.classList.remove('selected'));
     el.classList.add('selected');
     state.selectedAlarm = i;
-    playAlarm(i);
-  }
-  el.addEventListener('click', onAlarmTap);
-  el.addEventListener('touchend', (e) => { e.preventDefault(); onAlarmTap(e); });
+    unlockAudio().then(() => playAlarm(i));
+  };
+
+  el.addEventListener('click', selectAlarm);
+  el.addEventListener('touchend', (e) => { e.preventDefault(); selectAlarm(e); });
 
   const previewBtn = el.querySelector('.alarm-play');
-  previewBtn.addEventListener('click', (e) => { e.stopPropagation(); playAlarm(i); });
-  previewBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); playAlarm(i); });
+  previewBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    unlockAudio().then(() => playAlarm(i));
+  });
+  previewBtn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    unlockAudio().then(() => playAlarm(i));
+  });
+
   alarmList.appendChild(el);
 });
 
@@ -712,18 +764,10 @@ backgrounds.forEach((bg, i) => {
     document.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('selected'));
     sw.classList.add('selected');
     state.selectedColor = i;
-    applyBackground(bg);
+    document.body.style.background = bg.style;
   });
   colorGrid.appendChild(sw);
 });
-
-function applyBackground(bg) {
-  if (bg.value.startsWith('#') || bg.value === bg.value) {
-    document.body.style.background = bg.style;
-  } else {
-    document.body.style.background = bg.style;
-  }
-}
 
 // ─── Timer logic ──────────────────────────────────────────
 const ring = document.getElementById('ringProgress');
@@ -736,8 +780,8 @@ function updateRing() {
 }
 
 function formatTime(s) {
-  const m = Math.floor(s / 60).toString().padStart(2,'0');
-  const sec = (s % 60).toString().padStart(2,'0');
+  const m = Math.floor(s / 60).toString().padStart(2, '0');
+  const sec = (s % 60).toString().padStart(2, '0');
   return `${m}:${sec}`;
 }
 
@@ -795,6 +839,8 @@ function timerComplete() {
   clearInterval(state.interval);
   state.running = false;
   document.body.classList.remove('running');
+
+  // playAlarm uses pre-rendered buffers — works without a fresh user gesture
   playAlarm(state.selectedAlarm);
 
   if (state.mode === 'pomodoro') {
@@ -825,14 +871,17 @@ function updateSessionDots() {
   document.getElementById('sessionText').textContent = `Sesión ${s} de 4`;
 }
 
-// ─── Controls (click + touchend for iOS) ─────────────────
+// ─── Controls ─────────────────────────────────────────────
 function addTap(id, fn) {
   const el = document.getElementById(id);
   el.addEventListener('click', fn);
   el.addEventListener('touchend', (e) => { e.preventDefault(); fn(e); });
 }
 
-addTap('btnPlay', () => { if (state.running) pauseTimer(); else startTimer(); });
+addTap('btnPlay', () => {
+  unlockAudio(); // ensure unlocked on first play tap
+  if (state.running) pauseTimer(); else startTimer();
+});
 addTap('btnReset', () => resetTimer());
 addTap('btnSkip', () => { clearInterval(state.interval); timerComplete(); });
 
@@ -840,7 +889,7 @@ document.querySelectorAll('.mode-tab').forEach(tab => {
   tab.addEventListener('click', () => setMode(tab.dataset.mode));
 });
 
-['durPomodoro','durShort','durLong'].forEach(id => {
+['durPomodoro', 'durShort', 'durLong'].forEach(id => {
   document.getElementById(id).addEventListener('change', () => {
     const activeMode = id === 'durPomodoro' ? 'pomodoro' : id === 'durShort' ? 'short' : 'long';
     if (state.mode === activeMode) resetTimer();
