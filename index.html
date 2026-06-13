@@ -464,7 +464,7 @@
 <main>
   <!-- Header -->
   <header>
-    <div class="logo">🍅 Pomodoro Price Valley</div>
+    <div class="logo">🍅 Pomodoro</div>
     <h1>Focus · Break · Repeat</h1>
   </header>
 
@@ -573,55 +573,89 @@ const alarms = [
     play(ctx) { waves(ctx); } },
 ];
 
-// ─── Audio Engine ─────────────────────────────────────────
+// ─── Audio Engine (iOS-safe) ───────────────────────────────
+// iOS Safari rule: AudioContext must be created AND resumed
+// synchronously inside a direct user-gesture handler (touchend/click).
+// We keep one context and re-use it, resuming it on every play call.
+
+let _ctx = null;
+
 function getCtx() {
-  if (!state.audioCtx) state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return state.audioCtx;
+  // Create lazily — will be called inside a tap handler on iOS
+  if (!_ctx) {
+    _ctx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return _ctx;
 }
 
-function beep(ctx, freq, startT, dur, vol=0.3, type='sine') {
-  const o = ctx.createOscillator(), g = ctx.createGain();
-  o.type = type; o.frequency.value = freq;
-  g.gain.setValueAtTime(0, ctx.currentTime + startT);
-  g.gain.linearRampToValueAtTime(vol, ctx.currentTime + startT + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startT + dur);
-  o.connect(g); g.connect(ctx.destination);
-  o.start(ctx.currentTime + startT);
-  o.stop(ctx.currentTime + startT + dur + 0.05);
-}
-
-function bell(ctx, freqs, start, dur) {
-  freqs.forEach((f, i) => beep(ctx, f, start + i*0.1, dur, 0.25, 'sine'));
-}
-
-function zen(ctx) {
-  [261, 329, 392, 523, 659].forEach((f, i) => beep(ctx, f, i*0.18, 0.5, 0.2, 'sine'));
-}
-
-function fanfare(ctx) {
-  const seq = [[523,0],[659,0.15],[784,0.3],[1046,0.45]];
-  seq.forEach(([f,t]) => beep(ctx, f, t, 0.25, 0.25, 'sawtooth'));
-}
-
-function waves(ctx) {
-  for (let i = 0; i < 6; i++) {
-    const f = 200 + Math.sin(i) * 80;
-    beep(ctx, f, i*0.1, 0.4, 0.12, 'sine');
-    beep(ctx, f*1.5, i*0.1+0.05, 0.35, 0.08, 'sine');
+// Synchronous unlock + play wrapper
+// iOS requires ctx.resume() to be called in the SAME call stack as the tap.
+function withCtx(fn) {
+  const ctx = getCtx();
+  // resume() is synchronous enough on iOS when called inside touchend
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(() => fn(ctx));
+  } else {
+    fn(ctx);
   }
 }
 
-async function playAlarm(index) {
-  try {
-    const ctx = getCtx();
-    if (ctx.state === 'suspended') await ctx.resume();
-    // Small silent buffer trick to fully unlock AudioContext on iOS/Chrome
-    const unlock = ctx.createBufferSource();
-    unlock.buffer = ctx.createBuffer(1, 1, 22050);
-    unlock.connect(ctx.destination);
-    unlock.start(0);
-    alarms[index].play(ctx);
-  } catch(e) { console.warn('Audio error', e); }
+// Core tone builder
+function tone(ctx, freq, startT, dur, vol, type = 'sine') {
+  const now = ctx.currentTime;
+  const osc  = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, now);
+  gain.gain.setValueAtTime(0.001,   now + startT);
+  gain.gain.linearRampToValueAtTime(vol,   now + startT + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + startT + dur);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(now + startT);
+  osc.stop(now  + startT + dur + 0.05);
+}
+
+// ── Individual alarm sounds ────────────────────────────────
+function soundBell(ctx) {
+  [[523,0],[659,0.38],[784,0.76]].forEach(([f,t]) => {
+    tone(ctx, f,     t,      1.1, 0.55, 'sine');
+    tone(ctx, f * 2, t,      0.5, 0.18, 'sine');
+  });
+}
+
+function soundDigital(ctx) {
+  for (let i = 0; i < 4; i++) {
+    tone(ctx, 1046, i * 0.22, 0.16, 0.65, 'square');
+  }
+}
+
+function soundZen(ctx) {
+  [261, 329, 392, 523, 659, 784].forEach((f, i) => {
+    tone(ctx, f, i * 0.22, 0.9, 0.45, 'sine');
+  });
+}
+
+function soundFanfare(ctx) {
+  [
+    [523, 0,    0.28], [659, 0,    0.28], [784, 0,    0.28],
+    [659, 0.32, 0.28], [784, 0.32, 0.28], [988, 0.32, 0.28],
+    [784, 0.65, 0.50], [988, 0.65, 0.50], [1175,0.65, 0.50],
+  ].forEach(([f, t, d]) => tone(ctx, f, t, d, 0.38, 'sawtooth'));
+}
+
+function soundWaves(ctx) {
+  for (let i = 0; i < 8; i++) {
+    const f = 160 + i * 28;
+    tone(ctx, f,       i * 0.09,        0.65, 0.22, 'sine');
+    tone(ctx, f * 1.5, i * 0.09 + 0.04, 0.55, 0.14, 'sine');
+  }
+}
+
+const SOUND_FNS = [soundBell, soundDigital, soundZen, soundFanfare, soundWaves];
+
+function playAlarm(index) {
+  withCtx(ctx => SOUND_FNS[index](ctx));
 }
 
 // ─── Backgrounds ─────────────────────────────────────────
@@ -651,21 +685,19 @@ alarms.forEach((a, i) => {
     </div>
     <button class="alarm-play" data-i="${i}" title="Previsualizar">▶</button>
   `;
-  el.addEventListener('click', (e) => {
-    if (e.target.closest('.alarm-play')) {
-      e.stopPropagation();
-      playAlarm(i);
-      return;
-    }
+  function onAlarmTap(e) {
+    if (e.target.closest('.alarm-play')) return;
     document.querySelectorAll('.alarm-option').forEach(x => x.classList.remove('selected'));
     el.classList.add('selected');
     state.selectedAlarm = i;
     playAlarm(i);
-  });
-  el.querySelector('.alarm-play').addEventListener('click', (e) => {
-    e.stopPropagation();
-    playAlarm(i);
-  });
+  }
+  el.addEventListener('click', onAlarmTap);
+  el.addEventListener('touchend', (e) => { e.preventDefault(); onAlarmTap(e); });
+
+  const previewBtn = el.querySelector('.alarm-play');
+  previewBtn.addEventListener('click', (e) => { e.stopPropagation(); playAlarm(i); });
+  previewBtn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); playAlarm(i); });
   alarmList.appendChild(el);
 });
 
@@ -793,19 +825,16 @@ function updateSessionDots() {
   document.getElementById('sessionText').textContent = `Sesión ${s} de 4`;
 }
 
-// ─── Controls ─────────────────────────────────────────────
-document.getElementById('btnPlay').addEventListener('click', () => {
-  if (state.running) pauseTimer(); else startTimer();
-});
+// ─── Controls (click + touchend for iOS) ─────────────────
+function addTap(id, fn) {
+  const el = document.getElementById(id);
+  el.addEventListener('click', fn);
+  el.addEventListener('touchend', (e) => { e.preventDefault(); fn(e); });
+}
 
-document.getElementById('btnReset').addEventListener('click', () => {
-  resetTimer();
-});
-
-document.getElementById('btnSkip').addEventListener('click', () => {
-  clearInterval(state.interval);
-  timerComplete();
-});
+addTap('btnPlay', () => { if (state.running) pauseTimer(); else startTimer(); });
+addTap('btnReset', () => resetTimer());
+addTap('btnSkip', () => { clearInterval(state.interval); timerComplete(); });
 
 document.querySelectorAll('.mode-tab').forEach(tab => {
   tab.addEventListener('click', () => setMode(tab.dataset.mode));
