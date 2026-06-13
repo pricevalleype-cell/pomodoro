@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pomodoro · Focus Timer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0D0D14;
+    --surface: rgba(255,255,255,0.04);
+    --border: rgba(255,255,255,0.08);
+    --accent: #FF6B35;
+    --accent2: #FFB347;
+    --text: #F0EDE8;
+    --muted: rgba(240,237,232,0.45);
+    --ring-bg: rgba(255,255,255,0.06);
+    --radius: 20px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.8s ease;
+    overflow-x: hidden;
+  }
+
+  /* ── Ambient glow ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 45% at 50% 0%, rgba(255,107,53,0.12) 0%, transparent 70%);
+    pointer-events: none;
+    transition: opacity 0.8s ease;
+    z-index: 0;
+  }
+
+  body.running::before {
+    background: radial-gradient(ellipse 60% 45% at 50% 0%, rgba(255,107,53,0.22) 0%, transparent 70%);
+  }
+
+  main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+    padding: 24px 16px 40px;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* ── Mode Tabs ── */
+  .mode-tabs {
+    display: flex;
+    gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    padding: 5px;
+  }
+
+  .mode-tab {
+    padding: 8px 20px;
+    border-radius: 50px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    white-space: nowrap;
+  }
+
+  .mode-tab.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 16px rgba(255,107,53,0.35);
+  }
+
+  .mode-tab:hover:not(.active) {
+    color: var(--text);
+    background: rgba(255,255,255,0.06);
+  }
+
+  /* ── Timer Ring ── */
+  .timer-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .timer-svg {
+    transform: rotate(-90deg);
+    filter: drop-shadow(0 0 24px rgba(255,107,53,0.25));
+    transition: filter 0.4s;
+  }
+
+  body.running .timer-svg {
+    filter: drop-shadow(0 0 36px rgba(255,107,53,0.5));
+    animation: breathe 4s ease-in-out infinite;
+  }
+
+  @keyframes breathe {
+    0%, 100% { filter: drop-shadow(0 0 28px rgba(255,107,53,0.4)); }
+    50%       { filter: drop-shadow(0 0 50px rgba(255,107,53,0.65)); }
+  }
+
+  .ring-track {
+    fill: none;
+    stroke: var(--ring-bg);
+    stroke-width: 8;
+  }
+
+  .ring-progress {
+    fill: none;
+    stroke: url(#ringGrad);
+    stroke-width: 8;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear;
+  }
+
+  .timer-inner {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .timer-display {
+    font-family: 'Space Mono', monospace;
+    font-size: 72px;
+    font-weight: 700;
+    letter-spacing: -2px;
+    line-height: 1;
+    background: linear-gradient(160deg, #fff 30%, var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    transition: all 0.3s;
+  }
+
+  .timer-label {
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  /* ── Controls ── */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .btn-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-size: 18px;
+  }
+
+  .btn-icon:hover {
+    border-color: rgba(255,255,255,0.2);
+    color: var(--text);
+    background: rgba(255,255,255,0.08);
+  }
+
+  .btn-main {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, var(--accent), #FF8C42);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    box-shadow: 0 4px 24px rgba(255,107,53,0.4);
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-main::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(255,255,255,0);
+    transition: background 0.2s;
+  }
+
+  .btn-main:hover::after { background: rgba(255,255,255,0.12); }
+  .btn-main:active { transform: scale(0.95); }
+
+  /* ── Session count ── */
+  .sessions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .session-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: all 0.3s;
+  }
+
+  .session-dot.done {
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(255,107,53,0.5);
+  }
+
+  .session-text {
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: 4px;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Panel Card ── */
+  .panel {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  /* ── Color picker ── */
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
+
+  .color-swatch {
+    aspect-ratio: 1;
+    border-radius: 12px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.22s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .color-swatch:hover { transform: scale(1.08); }
+
+  .color-swatch.selected {
+    border-color: #fff;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+  }
+
+  .color-swatch.selected::after {
+    content: '✓';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: #fff;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  }
+
+  /* ── Alarm picker ── */
+  .alarm-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .alarm-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    text-align: left;
+  }
+
+  .alarm-option:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.14); }
+
+  .alarm-option.selected {
+    border-color: var(--accent);
+    background: rgba(255,107,53,0.08);
+  }
+
+  .alarm-icon {
+    font-size: 20px;
+    width: 28px;
+    text-align: center;
+  }
+
+  .alarm-info { flex: 1; }
+  .alarm-name { font-weight: 500; font-size: 13px; }
+  .alarm-desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  .alarm-play {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+  }
+
+  .alarm-play:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+  /* ── Duration settings ── */
+  .duration-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+
+  .duration-item label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .duration-item input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    text-align: center;
+    transition: border-color 0.2s;
+    -moz-appearance: textfield;
+  }
+
+  .duration-item input::-webkit-outer-spin-button,
+  .duration-item input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+  .duration-item input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  /* ── Notification toast ── */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: rgba(30,30,42,0.95);
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    padding: 12px 24px;
+    font-size: 14px;
+    color: var(--text);
+    backdrop-filter: blur(16px);
+    transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1), opacity 0.35s;
+    opacity: 0;
+    z-index: 100;
+    white-space: nowrap;
+  }
+
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  @media (max-width: 380px) {
+    .timer-display { font-size: 56px; }
+    .mode-tab { padding: 7px 14px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<main>
+  <!-- Header -->
+  <header>
+    <div class="logo">🍅 Pomodoro</div>
+    <h1>Focus · Break · Repeat</h1>
+  </header>
+
+  <!-- Mode tabs -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="pomodoro">Pomodoro</button>
+    <button class="mode-tab" data-mode="short">Descanso corto</button>
+    <button class="mode-tab" data-mode="long">Descanso largo</button>
+  </div>
+
+  <!-- Timer Ring -->
+  <div class="timer-wrap">
+    <svg class="timer-svg" width="260" height="260" viewBox="0 0 260 260">
+      <defs>
+        <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#FF6B35"/>
+          <stop offset="100%" stop-color="#FFB347"/>
+        </linearGradient>
+      </defs>
+      <circle class="ring-track" cx="130" cy="130" r="114"/>
+      <circle class="ring-progress" id="ringProgress" cx="130" cy="130" r="114"
+        stroke-dasharray="716.28"
+        stroke-dashoffset="0"/>
+    </svg>
+    <div class="timer-inner">
+      <div class="timer-display" id="timerDisplay">25:00</div>
+      <div class="timer-label" id="timerLabel">Enfócate</div>
+    </div>
+  </div>
+
+  <!-- Session dots -->
+  <div class="sessions">
+    <div class="session-dot" id="dot0"></div>
+    <div class="session-dot" id="dot1"></div>
+    <div class="session-dot" id="dot2"></div>
+    <div class="session-dot" id="dot3"></div>
+    <span class="session-text" id="sessionText">Sesión 1 de 4</span>
+  </div>
+
+  <!-- Main controls -->
+  <div class="controls">
+    <button class="btn-icon" id="btnReset" title="Reiniciar">↺</button>
+    <button class="btn-main" id="btnPlay">▶</button>
+    <button class="btn-icon" id="btnSkip" title="Saltar">⏭</button>
+  </div>
+
+  <!-- Duration settings -->
+  <div class="panel">
+    <div class="panel-title">⏱ Duración (minutos)</div>
+    <div class="duration-grid">
+      <div class="duration-item">
+        <label>Pomodoro</label>
+        <input type="number" id="durPomodoro" value="25" min="1" max="99">
+      </div>
+      <div class="duration-item">
+        <label>Descanso corto</label>
+        <input type="number" id="durShort" value="5" min="1" max="99">
+      </div>
+      <div class="duration-item">
+        <label>Descanso largo</label>
+        <input type="number" id="durLong" value="15" min="1" max="99">
+      </div>
+    </div>
+  </div>
+
+  <!-- Alarm selector -->
+  <div class="panel">
+    <div class="panel-title">🔔 Sonido de alarma</div>
+    <div class="alarm-list" id="alarmList"></div>
+  </div>
+
+  <!-- Background color -->
+  <div class="panel">
+    <div class="panel-title">🎨 Color de fondo</div>
+    <div class="color-grid" id="colorGrid"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ───────────────────────────────────────────────
+const state = {
+  mode: 'pomodoro',
+  running: false,
+  seconds: 25 * 60,
+  totalSeconds: 25 * 60,
+  sessions: 0,
+  interval: null,
+  selectedAlarm: 0,
+  selectedColor: 0,
+  audioCtx: null,
+};
+
+// ─── Alarm definitions ───────────────────────────────────
+const alarms = [
+  { icon: '🔔', name: 'Campana suave', desc: 'Tono cálido y relajante',
+    play(ctx) { bell(ctx, [523, 659, 784], 0.4, 0.8); } },
+  { icon: '⚡', name: 'Alerta digital', desc: 'Pitido electrónico nítido',
+    play(ctx) { beep(ctx, 880, 0.1, 0.15); setTimeout(()=>beep(ctx,1046,0.1,0.15),200); setTimeout(()=>beep(ctx,1318,0.15,0.25),400); } },
+  { icon: '🎵', name: 'Melodía zen', desc: 'Notas ascendentes suaves',
+    play(ctx) { zen(ctx); } },
+  { icon: '📯', name: 'Trompeta breve', desc: 'Acorde vibrante de fanfarria',
+    play(ctx) { fanfare(ctx); } },
+  { icon: '🌊', name: 'Olas digitales', desc: 'Sonido envolvente tipo océano',
+    play(ctx) { waves(ctx); } },
+];
+
+// ─── Audio Engine ─────────────────────────────────────────
+function getCtx() {
+  if (!state.audioCtx) state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return state.audioCtx;
+}
+
+function beep(ctx, freq, startT, dur, vol=0.3, type='sine') {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, ctx.currentTime + startT);
+  g.gain.linearRampToValueAtTime(vol, ctx.currentTime + startT + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + startT + dur);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(ctx.currentTime + startT);
+  o.stop(ctx.currentTime + startT + dur + 0.05);
+}
+
+function bell(ctx, freqs, start, dur) {
+  freqs.forEach((f, i) => beep(ctx, f, start + i*0.1, dur, 0.25, 'sine'));
+}
+
+function zen(ctx) {
+  [261, 329, 392, 523, 659].forEach((f, i) => beep(ctx, f, i*0.18, 0.5, 0.2, 'sine'));
+}
+
+function fanfare(ctx) {
+  const seq = [[523,0],[659,0.15],[784,0.3],[1046,0.45]];
+  seq.forEach(([f,t]) => beep(ctx, f, t, 0.25, 0.25, 'sawtooth'));
+}
+
+function waves(ctx) {
+  for (let i = 0; i < 6; i++) {
+    const f = 200 + Math.sin(i) * 80;
+    beep(ctx, f, i*0.1, 0.4, 0.12, 'sine');
+    beep(ctx, f*1.5, i*0.1+0.05, 0.35, 0.08, 'sine');
+  }
+}
+
+function playAlarm(index) {
+  try {
+    const ctx = getCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    alarms[index].play(ctx);
+  } catch(e) { console.warn('Audio error', e); }
+}
+
+// ─── Backgrounds ─────────────────────────────────────────
+const backgrounds = [
+  { label: 'Carbón', value: '#0D0D14', style: '#0D0D14' },
+  { label: 'Medianoche', value: '#0A1628', style: '#0A1628' },
+  { label: 'Bosque', value: '#0D1F1A', style: '#0D1F1A' },
+  { label: 'Ciruela', value: '#1A0D28', style: '#1A0D28' },
+  { label: 'Moca', value: '#1A1210', style: '#1A1210' },
+  { label: 'Aurora', value: 'aurora', style: 'linear-gradient(135deg,#0a0a1a 0%,#1a0a2e 50%,#0a1a2e 100%)' },
+  { label: 'Atardecer', value: 'sunset', style: 'linear-gradient(160deg,#1a0a05 0%,#2a1005 50%,#1a0505 100%)' },
+  { label: 'Océano', value: 'ocean', style: 'linear-gradient(160deg,#050d1a 0%,#051a1a 100%)' },
+  { label: 'Ópalo', value: 'opal', style: 'linear-gradient(135deg,#0a1a14 0%,#081420 50%,#14081a 100%)' },
+  { label: 'Gris cálido', value: '#171614', style: '#171614' },
+];
+
+// ─── Build alarm UI ───────────────────────────────────────
+const alarmList = document.getElementById('alarmList');
+alarms.forEach((a, i) => {
+  const el = document.createElement('button');
+  el.className = 'alarm-option' + (i === 0 ? ' selected' : '');
+  el.innerHTML = `
+    <span class="alarm-icon">${a.icon}</span>
+    <div class="alarm-info">
+      <div class="alarm-name">${a.name}</div>
+      <div class="alarm-desc">${a.desc}</div>
+    </div>
+    <button class="alarm-play" data-i="${i}" title="Previsualizar">▶</button>
+  `;
+  el.addEventListener('click', (e) => {
+    if (e.target.closest('.alarm-play')) {
+      e.stopPropagation();
+      playAlarm(i);
+      return;
+    }
+    document.querySelectorAll('.alarm-option').forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    state.selectedAlarm = i;
+    playAlarm(i);
+  });
+  el.querySelector('.alarm-play').addEventListener('click', (e) => {
+    e.stopPropagation();
+    playAlarm(i);
+  });
+  alarmList.appendChild(el);
+});
+
+// ─── Build color UI ───────────────────────────────────────
+const colorGrid = document.getElementById('colorGrid');
+backgrounds.forEach((bg, i) => {
+  const sw = document.createElement('div');
+  sw.className = 'color-swatch' + (i === 0 ? ' selected' : '');
+  sw.title = bg.label;
+  sw.style.background = bg.style;
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('selected'));
+    sw.classList.add('selected');
+    state.selectedColor = i;
+    applyBackground(bg);
+  });
+  colorGrid.appendChild(sw);
+});
+
+function applyBackground(bg) {
+  if (bg.value.startsWith('#') || bg.value === bg.value) {
+    document.body.style.background = bg.style;
+  } else {
+    document.body.style.background = bg.style;
+  }
+}
+
+// ─── Timer logic ──────────────────────────────────────────
+const ring = document.getElementById('ringProgress');
+const CIRCUMFERENCE = 2 * Math.PI * 114;
+ring.style.strokeDasharray = CIRCUMFERENCE;
+
+function updateRing() {
+  const pct = state.seconds / state.totalSeconds;
+  ring.style.strokeDashoffset = CIRCUMFERENCE * (1 - pct);
+}
+
+function formatTime(s) {
+  const m = Math.floor(s / 60).toString().padStart(2,'0');
+  const sec = (s % 60).toString().padStart(2,'0');
+  return `${m}:${sec}`;
+}
+
+const labels = { pomodoro: 'Enfócate', short: 'Descansa un poco', long: 'Descanso largo' };
+
+function updateDisplay() {
+  document.getElementById('timerDisplay').textContent = formatTime(state.seconds);
+  document.getElementById('timerLabel').textContent = labels[state.mode];
+  updateRing();
+  updateSessionDots();
+}
+
+function getDurations() {
+  return {
+    pomodoro: parseInt(document.getElementById('durPomodoro').value) || 25,
+    short: parseInt(document.getElementById('durShort').value) || 5,
+    long: parseInt(document.getElementById('durLong').value) || 15,
+  };
+}
+
+function resetTimer(andStart = false) {
+  clearInterval(state.interval);
+  state.running = false;
+  const dur = getDurations();
+  state.seconds = dur[state.mode] * 60;
+  state.totalSeconds = state.seconds;
+  updateDisplay();
+  document.getElementById('btnPlay').textContent = '▶';
+  document.body.classList.remove('running');
+  if (andStart) startTimer();
+}
+
+function startTimer() {
+  state.running = true;
+  document.body.classList.add('running');
+  document.getElementById('btnPlay').textContent = '⏸';
+  state.interval = setInterval(() => {
+    state.seconds--;
+    if (state.seconds < 0) {
+      timerComplete();
+    } else {
+      updateDisplay();
+    }
+  }, 1000);
+}
+
+function pauseTimer() {
+  clearInterval(state.interval);
+  state.running = false;
+  document.body.classList.remove('running');
+  document.getElementById('btnPlay').textContent = '▶';
+}
+
+function timerComplete() {
+  clearInterval(state.interval);
+  state.running = false;
+  document.body.classList.remove('running');
+  playAlarm(state.selectedAlarm);
+
+  if (state.mode === 'pomodoro') {
+    state.sessions = (state.sessions + 1) % 5;
+    showToast('🍅 ¡Pomodoro completado! Toma un descanso.');
+    if (state.sessions === 0) setMode('long');
+    else setMode('short');
+  } else {
+    showToast('⏰ ¡Descanso terminado! A enfocarse.');
+    setMode('pomodoro');
+  }
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  document.querySelectorAll('.mode-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.mode === mode);
+  });
+  resetTimer();
+}
+
+function updateSessionDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById('dot' + i);
+    if (dot) dot.classList.toggle('done', i < (state.sessions % 4));
+  }
+  const s = (state.sessions % 4) + 1;
+  document.getElementById('sessionText').textContent = `Sesión ${s} de 4`;
+}
+
+// ─── Controls ─────────────────────────────────────────────
+document.getElementById('btnPlay').addEventListener('click', () => {
+  if (state.running) pauseTimer(); else startTimer();
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  resetTimer();
+});
+
+document.getElementById('btnSkip').addEventListener('click', () => {
+  clearInterval(state.interval);
+  timerComplete();
+});
+
+document.querySelectorAll('.mode-tab').forEach(tab => {
+  tab.addEventListener('click', () => setMode(tab.dataset.mode));
+});
+
+['durPomodoro','durShort','durLong'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    const activeMode = id === 'durPomodoro' ? 'pomodoro' : id === 'durShort' ? 'short' : 'long';
+    if (state.mode === activeMode) resetTimer();
+  });
+});
+
+// ─── Toast ────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ─── Init ─────────────────────────────────────────────────
+updateDisplay();
+</script>
+</body>
+</html>
