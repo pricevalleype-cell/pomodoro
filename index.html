@@ -464,7 +464,7 @@
 <main>
   <!-- Header -->
   <header>
-    <div class="logo">🍅 Pomodoro</div>
+    <div class="logo">🍅 Pomodoro Price Valley</div>
     <h1>Focus · Break · Repeat</h1>
   </header>
 
@@ -611,10 +611,15 @@ function waves(ctx) {
   }
 }
 
-function playAlarm(index) {
+async function playAlarm(index) {
   try {
     const ctx = getCtx();
-    if (ctx.state === 'suspended') ctx.resume();
+    if (ctx.state === 'suspended') await ctx.resume();
+    // Small silent buffer trick to fully unlock AudioContext on iOS/Chrome
+    const unlock = ctx.createBufferSource();
+    unlock.buffer = ctx.createBuffer(1, 1, 22050);
+    unlock.connect(ctx.destination);
+    unlock.start(0);
     alarms[index].play(ctx);
   } catch(e) { console.warn('Audio error', e); }
 }
